@@ -1,0 +1,87 @@
+<!DOCTYPE html> # This is a simple HTML file that uses MediaPipe's Hand Landmarker to track hand landmarks from the webcam feed and draw them on a canvas. It loads the model, accesses the camera, and continuously processes video frames to detect hand landmarks, which are then drawn as green circles on the canvas. The status text updates to indicate when the model is ready and when the camera is being accessed.
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Simple MediaPipe Hand Tracker</title>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs" type="module"></script>
+  
+  <style>
+    body { font-family: sans-serif; margin: 0; display: flex; flex-direction: column; align-items: center; background: #111; color: white; }
+    #container { position: relative; width: 100%; max-width: 480px; aspect-ratio: 3/4; }
+    video, canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; border-radius: 12px; }
+    canvas { pointer-events: none; }
+    #status { padding: 10px; font-size: 14px; }
+  </style>
+</head>
+<body>
+  <h2>Hand Tracker</h2>
+  <div id="status">Loading model...</div>
+  <div id="container">
+    <video id="webcam" autoplay playsinline muted></video>
+    <canvas id="output_canvas"></canvas>
+  </div>
+
+  <script type="module">
+    import { HandLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/vision_bundle.mjs";
+
+    const video = document.getElementById("webcam");
+    const canvas = document.getElementById("output_canvas");
+    const ctx = canvas.getContext("2d");
+    const status = document.getElementById("status");
+
+    let handLandmarker;
+    let lastVideoTime = -1;
+
+    // Initialize the hand landmarker
+    async function init() {
+      const vision = await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision/wasm");
+      handLandmarker = await HandLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: `https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task`,
+          delegate: "GPU" // Forces use of mobile GPU
+        },
+        runningMode: "VIDEO",
+        numHands: 2
+      });
+      status.innerText = "Model Ready! Accessing Camera...";
+      startCamera();
+    }
+
+    async function startCamera() {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } });
+      video.srcObject = stream;
+      video.addEventListener("loadeddata", predictLoop);
+    }
+
+    async function predictLoop() {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+
+      if (video.currentTime !== lastVideoTime) {
+        lastVideoTime = video.currentTime;
+        const results = handLandmarker.detectForVideo(video, performance.now());
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        if (results.landmarks) {
+          for (const landmarks of results.landmarks) {
+            drawHand(landmarks);
+          }
+        }
+      }
+      requestAnimationFrame(predictLoop);
+    }
+
+    function drawHand(landmarks) {
+      ctx.fillStyle = "#00FF00";
+      for (const point of landmarks) {
+        ctx.beginPath();
+        ctx.arc(point.x * canvas.width, point.y * canvas.height, 4, 0, 2 * Math.PI);
+        ctx.fill();
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
